@@ -2,64 +2,56 @@ const net = require('net');
 const fs = require('fs');
 const path = require('path');
 const port = 8124;
-
-const reqFiles = 'FILES';
-const reqQA = 'QA';
-const resGood = 'ACK';
-const resBad = 'DEC';
-const resFiles = 'NEXT';
-const EOF = 'EOF';
+const filesRequest = 'FILES';
+const accept = 'ACK';
+const decline = 'DEC';
+const requestOnNextFile = 'REMAINING_FILES';
 const defaultDir = process.env.FILES_DIR;
-const maxConn = parseInt(process.env.CONN);
-
+const maxCountConnection = parseInt(process.env.MAX_COUNT_CON);
 let seed = 0;
-let arr = require('./qa.json')
 let clients = [];
 let files = [];
-let fdFile;
 let flag = 0;
 let connections = 0;
 
+function getUniqID() {
+    return Date.now() + seed++;
+}
 
 const server = net.createServer((client) => {
-    let fil;
-    if(++connections === maxConn){
+    let writeableStream;
+    if(++connections === maxCountConnection){
         client.destroy();
     }
     client.setEncoding('utf8');
 
     client.on('data', (data) => {
-        if (data === reqFiles || data === reqQA) {
+        if (data === filesRequest) {
             client.id = getUniqID();
-            if (data === reqFiles) {
-                files[client.id] = [];
-                fs.mkdir(defaultDir + path.sep + client.id,(err)=>{
-                    if(err)
-                    {
-                        console.log(err);
-                    }
-                });
-            }
+            files[client.id] = [];
+            fs.mkdir(defaultDir + path.sep + client.id);
             console.log(data);
             console.log(`Client ${client.id} connected`);
             clients[client.id] = data;
+            client.write(accept);
+           
         }
         else if (client.id === undefined) {
-            client.write(resBad);
+            client.write(decline);
             client.destroy();
         }
-        if (clients[client.id] === reqFiles && data !== reqFiles) {
+        else if (clients[client.id] === filesRequest && data !== filesRequest) {
             files[client.id].push(data);
             flag++;
             if (flag === 2) {
                 let buf = Buffer.from(files[client.id][0],'hex');
                 let filePath = defaultDir+path.sep+client.id+path.sep+files[client.id][1];
-                fil = fs.createWriteStream(filePath);
-                fil.write(buf);
-                flag=0;
+                writeableStream = fs.createWriteStream(filePath);
+                writeableStream.write(buf);
+                flag = 0;
                 files[client.id] = [];
-                fil.close();
-                client.write(resFiles);
+                writeableStream.close();
+                client.write(requestOnNextFile);
             }
         }
     });
@@ -73,8 +65,3 @@ const server = net.createServer((client) => {
 server.listen(port, () => {
     console.log(`Server listening on localhost:${port}`);
 });
-
-function getUniqID() {
-    return Date.now() + seed++;
-}
-

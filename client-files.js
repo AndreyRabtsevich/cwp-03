@@ -4,24 +4,42 @@ const path = require("path");
 const port = 8124;
 const dirs = process.argv;
 const client = new net.Socket();
+const filesRequest = 'FILES';
+const accept = 'ACK';
+const decline = 'DEC';
+const requestOnNextFile = 'REMAINING_FILES'
 
-const req = 'FILES';
-const goodResp = 'ACK';
-const badResp = 'DEC';
-const resFiles = 'NEXT'
-
-let arrOfFiles = [];
+let arrOfFilespath = [];
 client.setEncoding('utf8');
+
 getDirs();
 
 client.connect(port, () => {
 
-    client.write(req);
+    client.write(filesRequest);
 });
 
+client.on('data', (data) => {
+    console.log(data);
+    console.log(arrOfFilespath);
+    if(arrOfFilespath.length === 0)
+        client.destroy();
+    else if (data === decline) {
+        client.destroy();
+    }
+    else if (data === requestOnNextFile || data === accept) {
+        sendFile();
+    }
+});
+
+client.on('close', function () {
+    console.log('Connection closed');
+});
 function getDirs() {
     for (let i = 2; i < dirs.length; i++)
+    {
         readFiles(dirs[i]);
+    }
 }
 
 function readFiles(dir) {
@@ -30,7 +48,7 @@ function readFiles(dir) {
             file = dir + path.sep + file;
             fs.lstat(file, (err, stats) => {
                 if (stats.isFile())
-                    arrOfFiles.push(file);
+                    arrOfFilespath.push(file);
                 else
                     readFiles(file);
             })
@@ -38,28 +56,11 @@ function readFiles(dir) {
     })
 }
 
-client.on('data', (data) => {
-    console.log(data);
-    console.log(arrOfFiles);
-    if (arrOfFiles.length === 0)
-        client.destroy();
-    else if (data === badResp) {
-        client.destroy();
-    }
-    else if (data === goodResp || data === resFiles) {
-        sendFile()
-    }
-
-    function sendFile() {
-        let filePath = arrOfFiles.pop();
-        fs.readFile(filePath, (err, data) => {
-            let buf = data.toString('hex');
-            client.write(buf);
-            client.write(path.basename(filePath));
-        })
-    }
-});
-
-client.on('close', function () {
-    console.log('Connection closed');
-});
+function sendFile() {
+    let filePath = arrOfFilespath.pop();
+    fs.readFile(filePath, (err, data) => {
+        let buf = data.toString('hex');
+        client.write(buf);
+        client.write(path.basename(filePath));
+    })
+}
